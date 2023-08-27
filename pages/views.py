@@ -8,6 +8,14 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.core.exceptions import ValidationError
 from .models import Product
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
+from django.contrib.auth import login, logout, authenticate
+from django.shortcuts import redirect
+from django.db import IntegrityError
+from .forms import UserCreateForm
+from django.contrib.auth.forms import AuthenticationForm
+
 
 
 class ProductIndexView(View):
@@ -136,3 +144,131 @@ class ProductCreateView(View):
             viewData["title"] = "Create product"
             viewData["form"] = form
             return render(request, self.template_name, viewData)
+        
+
+
+
+class CartView(View):
+    template_name = 'cart/index.html'
+    
+    def get(self, request):
+        # Simulated database for products
+        products = {}
+        products[121] = {'name': 'Tv samsung', 'price': '1000'}
+        products[11] = {'name': 'Iphone', 'price': '2000'}
+
+        # Get cart products from session
+        cart_products = {}
+        cart_product_data = request.session.get('cart_product_data', {})
+
+        for key, product in products.items():
+            if str(key) in cart_product_data.keys():
+                cart_products[key] = product
+
+        # Prepare data for the view
+        view_data = {
+            'title': 'Cart - Online Store',
+            'subtitle': 'Shopping Cart',
+            'products': products,
+            'cart_products': cart_products
+        }
+
+        return render(request, self.template_name, view_data)
+
+    def post(self, request, product_id):
+        # Get cart products from session and add the new product
+        cart_product_data = request.session.get('cart_product_data', {})
+        cart_product_data[product_id] = product_id
+        request.session['cart_product_data'] = cart_product_data
+
+        return redirect('cart_index')
+
+
+class CartRemoveAllView(View):
+    def post(self, request):
+        # Remove all products from cart in session
+        if 'cart_product_data' in request.session:
+            del request.session['cart_product_data']
+
+        return redirect('cart_index')  
+
+        
+def ImageViewFactory(image_storage):
+    class ImageView(View):
+        template_name = 'images/index.html'
+
+        def get(self, request):
+            image_url = request.session.get('image_url', '')
+            return render(request, self.template_name, {'image_url': image_url})
+
+        def post(self, request):
+            image_url = image_storage.store(request)
+            request.session['image_url'] = image_url
+            return redirect('image_index')
+    return ImageView
+
+
+
+def signupaccount(request):
+ if request.method == 'GET':
+    return render(request, 'pages/signupaccount.html',
+    {'form':UserCreationForm})
+ 
+ else:
+    if request.POST['password1'] == request.POST['password2']:
+        try:
+            user = User.objects.create_user(
+                request.POST['username'],
+                password= request.POST['password1'])
+            user.save()
+            login(request, user)
+            return redirect('home')
+        except IntegrityError:
+            return render(request,
+                'signupaccount.html',
+                {'form':UserCreationForm,
+                'error':'Username already taken. Choose new username.'})
+    else:
+        return render(request, 'signupaccount.html',
+        {'form':UserCreationForm,
+        'error':'Passwords do not match'})
+    
+
+
+def logoutaccount(request):
+ logout(request)
+ return redirect('home')
+
+
+
+def loginaccount(request):
+    if request.method == 'GET':
+        return render(request, 'pages/loginaccount.html', {'form':AuthenticationForm})
+    else:
+        user = authenticate(request,
+        username=request.POST['username'],
+        password=request.POST['password'])
+    if user is None:
+        return render(request,'loginaccount.html',
+            {'form': AuthenticationForm(), 'error': 'username and password do not match'})
+    else:
+        login(request,user)
+        return redirect('home')
+    
+
+
+
+class ImageViewNoDI(View):
+    template_name = 'images/index.html'
+
+    def get(self, request):
+        image_url = request.session.get('image_url', '')
+        
+        return render(request, self.template_name, {'image_url': image_url})
+
+    def post(self, request):
+        image_storage = ImageLocalStorage()
+        image_url = image_storage.store(request)
+        request.session['image_url'] = image_url
+
+        return redirect('image_index')
